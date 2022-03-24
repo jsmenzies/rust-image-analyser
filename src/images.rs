@@ -1,6 +1,6 @@
 use std::{fmt, fs, io};
 use std::fs::{DirEntry, ReadDir};
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use image::io::Reader;
@@ -25,61 +25,60 @@ pub fn parse_dir_to_metadata(dir: &Path) -> Vec<Metadata> {
 }
 
 fn parse_images(paths: Vec<PathBuf>) -> Vec<Metadata> {
-    for path in paths {
-        let mut metadata = Metadata::new(&path);
-        metadata.attempt_parse();
-        let result = metadata.generate_md5_hash();
+    let mut images = Vec::new();
 
-        if let Err(ref result) = result {
-            println!("{:?}", result);
+    for path in paths {
+        let metadata = Metadata::new(&path);
+        match metadata {
+            Ok(mut result) => {
+                result.attempt_parse();
+                result.generate_md5_hash();
+                images.push(result);
+            }
+            Err(e) => println!("{}", e),
         }
     }
 
-    Vec::new()
+    images
 }
 
 impl Metadata {
-    fn new(path: &Path) -> Self {
-        Self {
-            path: Path::to_path_buf(path),
-            title: path.file_name().unwrap().to_str().unwrap().to_string(),
-            extension: read_extension(path),
-            ..Metadata::default()
+    fn new(path: &Path) -> Result<Self, io::Error> {
+
+        if path.exists() && path.is_file() {
+            // let file_name = path.file_name().unwrap().to_str().unwrap();
+            // let file_size = path.metadata()?.len();
+            // let file_extension = path.extension().unwrap().to_str().unwrap();
+
+
+            Ok(Self {
+                // path: path.to_path_buf(),
+                // title: file_name.to_string(),
+                // file_size: file_size,
+                // file_extension: file_extension.to_string(),
+                // file_md5_hash: String::new(),
+                // file_parse_error: None,
+                path: Path::to_path_buf(path),
+                title: path.file_name().unwrap().to_str().unwrap().to_string(),
+                extension: read_extension(path),
+                ..Metadata::default()
+            })
+        } else {
+            Err(Error::new(ErrorKind::NotFound, "File not found"))
         }
     }
 
     fn attempt_parse(&mut self) -> Result<(), io::Error> {
         self.parsed = true;
+        fs::metadata(&self.path).unwrap();
         Ok(())
     }
 
-    fn generate_md5_hash(&mut self) -> Result<(), FileParseError> {
-        let metadata = fs::metadata(&self.path);
-
-        match metadata {
-            Ok(metadata) => {
-                if metadata.len() == 0 {
-                    return Err(FileIsEmpty);
-                }
-
-                let content = fs::read(&self.path);
-
-                match content {
-                    Ok(content) => {
-
-                        println!("{:x}", md5::Md5::digest(&content));
-
-                    }
-                    Err(_error) => {
-                        return Err(FileParseError::NoMD5);
-                    }
-                }
-            }
-            Err(_e) => {
-                return Err(FileParseError::FileInaccessible);
-            }
-        }
-
+    fn generate_md5_hash(&mut self) -> Result<(), io::Error> {
+        let vec = fs::read(&self.path)?;
+        let output = md5::Md5::digest(vec);
+        let hash = format!("{:x}", output);
+        self.md5 = hash;
         Ok(())
     }
 }
