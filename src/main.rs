@@ -1,12 +1,18 @@
-extern crate core;
-
-use std::path::Path;
-
 mod calculator;
 mod images;
 mod combiner;
 
 fn main() {
-    let path = Path::new("/Users/james/proc");
-    images::parse_dir_to_metadata(path);
+    let mut location = images::add_location(String::from("/Users/james/proc"));
+
+    location = images::shallow_pass_location(location);
+
+    location.metadata
+        .iter()
+        .filter(|meta| !meta.errors.is_empty())
+        .for_each(|metadata| {
+            println!("{:?}", metadata);
+        });
+
+    // println!("{:?}", &location);
 }

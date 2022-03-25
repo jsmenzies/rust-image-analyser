@@ -3,6 +3,6 @@
 - [x] MD5
 - [ ] Regex name for datetime
 - [ ] Phash
-- [ ]
-- [ ]
+- [ ] GPS
+- [ ] Local Storage?
 - [ ]

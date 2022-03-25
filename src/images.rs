@@ -1,95 +1,104 @@
-use std::{fmt, fs, io};
-use std::fs::{DirEntry, ReadDir};
+use std::{fs, io};
+use std::ffi::{OsString};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use image::io::Reader;
-use md5::Digest;
+pub fn add_location(root_string: String) -> Location {
+    let path = Path::new(&root_string);
+    let root = PathBuf::from(path);
 
-use crate::images::FileParseError::FileIsEmpty;
+    let result = verify_dir(path);
 
-// parse the directory recursively and return a list of all files
-pub fn parse_dir_to_metadata(dir: &Path) -> Vec<Metadata> {
-    println!("Parsing directory: {}", dir.display());
-    let result = fs::read_dir(dir);
-
-    let files = result
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_file())
-        .collect::<Vec<PathBuf>>();
-
-    parse_images(files);
-
-    Vec::new()
-}
-
-fn parse_images(paths: Vec<PathBuf>) -> Vec<Metadata> {
-    let mut images = Vec::new();
-
-    for path in paths {
-        let metadata = Metadata::new(&path);
-        match metadata {
-            Ok(mut result) => {
-                result.attempt_parse();
-                result.generate_md5_hash();
-                images.push(result);
+    match result {
+        Ok(paths) => {
+            Location {
+                root,
+                paths,
+                metadata: Vec::new(),
+                add_error: Vec::new(),
             }
-            Err(e) => println!("{}", e),
         }
-    }
-
-    images
-}
-
-impl Metadata {
-    fn new(path: &Path) -> Result<Self, io::Error> {
-
-        if path.exists() && path.is_file() {
-            // let file_name = path.file_name().unwrap().to_str().unwrap();
-            // let file_size = path.metadata()?.len();
-            // let file_extension = path.extension().unwrap().to_str().unwrap();
-
-
-            Ok(Self {
-                // path: path.to_path_buf(),
-                // title: file_name.to_string(),
-                // file_size: file_size,
-                // file_extension: file_extension.to_string(),
-                // file_md5_hash: String::new(),
-                // file_parse_error: None,
-                path: Path::to_path_buf(path),
-                title: path.file_name().unwrap().to_str().unwrap().to_string(),
-                extension: read_extension(path),
-                ..Metadata::default()
-            })
-        } else {
-            Err(Error::new(ErrorKind::NotFound, "File not found"))
+        Err(e) => {
+            Location {
+                root,
+                paths: Vec::new(),
+                metadata: Vec::new(),
+                add_error: vec![e],
+            }
         }
-    }
-
-    fn attempt_parse(&mut self) -> Result<(), io::Error> {
-        self.parsed = true;
-        fs::metadata(&self.path).unwrap();
-        Ok(())
-    }
-
-    fn generate_md5_hash(&mut self) -> Result<(), io::Error> {
-        let vec = fs::read(&self.path)?;
-        let output = md5::Md5::digest(vec);
-        let hash = format!("{:x}", output);
-        self.md5 = hash;
-        Ok(())
     }
 }
 
-fn read_extension(path: &Path) -> Extension {
-    let extension = path.extension();
+#[derive(Debug, Default)]
+pub struct Location {
+    root: PathBuf,
+    paths: Vec<PathBuf>,
+    pub metadata: Vec<Metadata>,
+    add_error: Vec<Error>,
+}
 
-    match extension {
-        Some(ext) => {
-            let ext = ext.to_str().unwrap();
-            match ext {
+#[derive(Default, Debug)]
+pub struct Metadata {
+    id: String,
+    path: PathBuf,
+    title: OsString,
+    extension: Extension,
+    content_length: u64,
+    pub errors: Vec<Error>,
+}
+
+pub fn shallow_pass_location(mut location: Location) -> Location {
+    for path in location.paths.iter() {
+        let mut metadata = Metadata {
+            path: path.to_path_buf(),
+            ..Metadata::default()
+        };
+
+        metadata = parse_fs_metadata(metadata);
+        metadata = parse_title(metadata);
+        metadata = parse_extension(metadata);
+
+        location.metadata.push(metadata);
+    }
+
+    location
+}
+
+fn parse_fs_metadata(mut metadata: Metadata) -> Metadata {
+    let result = fs::metadata(&metadata.path);
+    match result {
+        Ok(fs_metadata) => {
+            metadata.content_length = fs_metadata.len();
+        }
+        Err(e) => {
+            metadata.errors.push(e);
+        }
+    }
+
+    metadata
+}
+
+fn parse_title(mut metadata: Metadata) -> Metadata {
+    let name = &metadata.path.file_name();
+    match name {
+        Some(value) => {
+            metadata.title = value.to_os_string();
+        }
+        None => {
+            // Unsure if the name can actually not be present?
+            metadata.errors.push(Error::new(ErrorKind::Other, "No file name"));
+        }
+    }
+
+    metadata
+}
+
+fn parse_extension(mut metadata: Metadata) -> Metadata {
+    let extension = metadata.path.extension();
+
+    metadata.extension = extension
+        .map_or_else(|| Extension::UNKNOWN, |ext| {
+            match ext.to_ascii_lowercase().to_str().unwrap() {
                 "jpg" => Extension::JPG,
                 "png" => Extension::PNG,
                 "gif" => Extension::GIF,
@@ -98,16 +107,39 @@ fn read_extension(path: &Path) -> Extension {
                 "tiff" => Extension::TIFF,
                 "tif" => Extension::TIFF,
                 "jpeg" => Extension::JPG,
+                "mp4" => Extension::MP4,
+                "mov" => Extension::MOV,
                 _ => Extension::UNKNOWN,
             }
-        }
-        None => Extension::UNKNOWN,
+        });
+
+    if metadata.extension == Extension::UNKNOWN {
+        metadata.errors.push(Error::new(
+            ErrorKind::Other,
+            "File extension not recognised",
+        ));
     }
+
+    metadata
 }
 
-#[derive(Debug)]
+pub fn verify_dir(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
+    println!("Parsing directory: {}", dir.display());
+
+    Ok(fs::read_dir(dir)?
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .collect::<Vec<PathBuf>>())
+}
+
+impl Default for Extension {
+    fn default() -> Self { Extension::UNKNOWN }
+}
+
+#[derive(Debug, PartialEq)]
 enum Extension {
     JPG,
+    MP4,
     PNG,
     GIF,
     BMP,
@@ -115,34 +147,8 @@ enum Extension {
     ICO,
     PSD,
     WEBP,
+    MOV,
     UNKNOWN,
-}
-
-impl Default for Extension {
-    fn default() -> Self { Extension::UNKNOWN }
-}
-
-#[derive(Default, Debug)]
-pub struct Metadata {
-    id: String,
-    path: PathBuf,
-    title: String,
-    extension: Extension,
-    parsed: bool,
-    md5: String,
-    // width: u32,
-    // height: u32,
-    // content_length: u32,
-    // title_date_time: String,
-    // file_modified_date: String,
-    // exif_id0_date: String,
-    // exif_sub_id0_date_original: String,
-    // exif_sub_id0_date_digital: String,
-    // quicktime_meta_create_date: String,
-    // gps_date: String,
-    // iptc_date_create: String,
-    // iptc_digital_date_create: String,
-    // png_create_date: String,
 }
 
 #[derive(Debug)]
