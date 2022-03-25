@@ -3,6 +3,7 @@
 mod calculator;
 mod combiner;
 mod images;
+mod location;
 mod metadata;
 
 fn main() {
