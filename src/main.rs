@@ -3,6 +3,7 @@
 mod calculator;
 mod combiner;
 mod images;
+mod metadata;
 
 fn main() {
     let mut location = images::add_location("/Users/james/proc");
