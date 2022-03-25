@@ -1,6 +1,6 @@
-use image::{DynamicImage, GenericImageView, ImageFormat};
 use image::imageops::Triangle;
 use image::io::Reader;
+use image::{DynamicImage, GenericImageView, ImageFormat};
 
 fn combine() -> Result<(), ImageDataErrors> {
     let args = Args::new();
@@ -28,7 +28,7 @@ fn combine() -> Result<(), ImageDataErrors> {
         image::ColorType::Rgba8,
         image_1_format,
     )
-        .unwrap();
+    .unwrap();
     Ok(())
 }
 
@@ -123,7 +123,7 @@ fn set_rgba(vec: &Vec<u8>, start: usize, end: usize) -> Vec<u8> {
     rgba
 }
 
-#[derive(Debug)] 
+#[derive(Debug)]
 struct Args {
     pub image_1: String,
     pub image_2: String,
@@ -143,4 +143,3 @@ impl Args {
 fn get_nth_arg(n: usize) -> String {
     std::env::args().nth(n).unwrap()
 }
-

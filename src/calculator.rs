@@ -1,4 +1,4 @@
-use std::env::{Args, args};
+use std::env::{args, Args};
 
 fn _calculate() {
     let mut args: Args = args();

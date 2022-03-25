@@ -1,7 +1,7 @@
-use std::{fs, io};
-use std::ffi::{OsString};
+use std::ffi::OsString;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 pub fn add_location(root_string: String) -> Location {
     let path = Path::new(&root_string);
@@ -10,22 +10,18 @@ pub fn add_location(root_string: String) -> Location {
     let result = verify_dir(path);
 
     match result {
-        Ok(paths) => {
-            Location {
-                root,
-                paths,
-                metadata: Vec::new(),
-                add_error: Vec::new(),
-            }
-        }
-        Err(e) => {
-            Location {
-                root,
-                paths: Vec::new(),
-                metadata: Vec::new(),
-                add_error: vec![e],
-            }
-        }
+        Ok(paths) => Location {
+            root,
+            paths,
+            metadata: Vec::new(),
+            add_error: Vec::new(),
+        },
+        Err(e) => Location {
+            root,
+            paths: Vec::new(),
+            metadata: Vec::new(),
+            add_error: vec![e],
+        },
     }
 }
 
@@ -86,7 +82,9 @@ fn parse_title(mut metadata: Metadata) -> Metadata {
         }
         None => {
             // Unsure if the name can actually not be present?
-            metadata.errors.push(Error::new(ErrorKind::Other, "No file name"));
+            metadata
+                .errors
+                .push(Error::new(ErrorKind::Other, "No file name"));
         }
     }
 
@@ -96,22 +94,22 @@ fn parse_title(mut metadata: Metadata) -> Metadata {
 fn parse_extension(mut metadata: Metadata) -> Metadata {
     let extension = metadata.path.extension();
 
-    metadata.extension = extension
-        .map_or_else(|| Extension::UNKNOWN, |ext| {
-            match ext.to_ascii_lowercase().to_str().unwrap() {
-                "jpg" => Extension::JPG,
-                "png" => Extension::PNG,
-                "gif" => Extension::GIF,
-                "bmp" => Extension::BMP,
-                "webp" => Extension::WEBP,
-                "tiff" => Extension::TIFF,
-                "tif" => Extension::TIFF,
-                "jpeg" => Extension::JPG,
-                "mp4" => Extension::MP4,
-                "mov" => Extension::MOV,
-                _ => Extension::UNKNOWN,
-            }
-        });
+    metadata.extension = extension.map_or_else(
+        || Extension::UNKNOWN,
+        |ext| match ext.to_ascii_lowercase().to_str().unwrap() {
+            "jpg" => Extension::JPG,
+            "png" => Extension::PNG,
+            "gif" => Extension::GIF,
+            "bmp" => Extension::BMP,
+            "webp" => Extension::WEBP,
+            "tiff" => Extension::TIFF,
+            "tif" => Extension::TIFF,
+            "jpeg" => Extension::JPG,
+            "mp4" => Extension::MP4,
+            "mov" => Extension::MOV,
+            _ => Extension::UNKNOWN,
+        },
+    );
 
     if metadata.extension == Extension::UNKNOWN {
         metadata.errors.push(Error::new(
@@ -133,7 +131,9 @@ pub fn verify_dir(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
 }
 
 impl Default for Extension {
-    fn default() -> Self { Extension::UNKNOWN }
+    fn default() -> Self {
+        Extension::UNKNOWN
+    }
 }
 
 #[derive(Debug, PartialEq)]
