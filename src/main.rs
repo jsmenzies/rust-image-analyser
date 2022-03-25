@@ -1,9 +1,11 @@
+#![warn(clippy::pedantic)]
+
 mod calculator;
 mod combiner;
 mod images;
 
 fn main() {
-    let mut location = images::add_location(String::from("/Users/james/proc"));
+    let mut location = images::add_location("/Users/james/proc");
 
     location = images::shallow_pass_location(location);
 
