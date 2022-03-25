@@ -1,31 +1,27 @@
-use std::{fs, io};
-use std::ffi::{OsString};
+use std::ffi::OsString;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
-pub fn add_location(root_string: String) -> Location {
-    let path = Path::new(&root_string);
+pub fn add_location(root_string: &str) -> Location {
+    let path = Path::new(root_string);
     let root = PathBuf::from(path);
 
     let result = verify_dir(path);
 
     match result {
-        Ok(paths) => {
-            Location {
-                root,
-                paths,
-                metadata: Vec::new(),
-                add_error: Vec::new(),
-            }
-        }
-        Err(e) => {
-            Location {
-                root,
-                paths: Vec::new(),
-                metadata: Vec::new(),
-                add_error: vec![e],
-            }
-        }
+        Ok(paths) => Location {
+            root,
+            paths,
+            metadata: Vec::new(),
+            add_error: Vec::new(),
+        },
+        Err(e) => Location {
+            root,
+            paths: Vec::new(),
+            metadata: Vec::new(),
+            add_error: vec![e],
+        },
     }
 }
 
@@ -48,9 +44,9 @@ pub struct Metadata {
 }
 
 pub fn shallow_pass_location(mut location: Location) -> Location {
-    for path in location.paths.iter() {
+    for path in &location.paths {
         let mut metadata = Metadata {
-            path: path.to_path_buf(),
+            path: path.clone(),
             ..Metadata::default()
         };
 
@@ -86,7 +82,9 @@ fn parse_title(mut metadata: Metadata) -> Metadata {
         }
         None => {
             // Unsure if the name can actually not be present?
-            metadata.errors.push(Error::new(ErrorKind::Other, "No file name"));
+            metadata
+                .errors
+                .push(Error::new(ErrorKind::Other, "No file name"));
         }
     }
 
@@ -96,24 +94,22 @@ fn parse_title(mut metadata: Metadata) -> Metadata {
 fn parse_extension(mut metadata: Metadata) -> Metadata {
     let extension = metadata.path.extension();
 
-    metadata.extension = extension
-        .map_or_else(|| Extension::UNKNOWN, |ext| {
-            match ext.to_ascii_lowercase().to_str().unwrap() {
-                "jpg" => Extension::JPG,
-                "png" => Extension::PNG,
-                "gif" => Extension::GIF,
-                "bmp" => Extension::BMP,
-                "webp" => Extension::WEBP,
-                "tiff" => Extension::TIFF,
-                "tif" => Extension::TIFF,
-                "jpeg" => Extension::JPG,
-                "mp4" => Extension::MP4,
-                "mov" => Extension::MOV,
-                _ => Extension::UNKNOWN,
-            }
-        });
+    metadata.extension = extension.map_or_else(
+        || Extension::Unknown,
+        |ext| match ext.to_ascii_lowercase().to_str().unwrap() {
+            "jpg" | "jpeg" => Extension::Jpg,
+            "tif" | "tiff" => Extension::Tiff,
+            "bmp" => Extension::Bmp,
+            "gif" => Extension::Gif,
+            "mov" => Extension::Mov,
+            "mp4" => Extension::Mp4,
+            "png" => Extension::Png,
+            "webp" => Extension::Webp,
+            _ => Extension::Unknown,
+        },
+    );
 
-    if metadata.extension == Extension::UNKNOWN {
+    if metadata.extension == Extension::Unknown {
         metadata.errors.push(Error::new(
             ErrorKind::Other,
             "File extension not recognised",
@@ -133,22 +129,24 @@ pub fn verify_dir(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
 }
 
 impl Default for Extension {
-    fn default() -> Self { Extension::UNKNOWN }
+    fn default() -> Self {
+        Extension::Unknown
+    }
 }
 
 #[derive(Debug, PartialEq)]
 enum Extension {
-    JPG,
-    MP4,
-    PNG,
-    GIF,
-    BMP,
-    TIFF,
-    ICO,
-    PSD,
-    WEBP,
-    MOV,
-    UNKNOWN,
+    Jpg,
+    Mp4,
+    Png,
+    Gif,
+    Bmp,
+    Tiff,
+    Ico,
+    Psd,
+    Webp,
+    Mov,
+    Unknown,
 }
 
 #[derive(Debug)]
