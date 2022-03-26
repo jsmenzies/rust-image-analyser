@@ -35,4 +35,5 @@ fn main() {
     print!("{:?}", errs.count());
     print!("/");
     print!("{:?}", location.metadata.len());
+    println!();
 }

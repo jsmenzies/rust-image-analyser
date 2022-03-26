@@ -1,14 +1,13 @@
-use std::{fmt, fs, io};
+use std::{fs, io};
 use std::default::Default;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Debug;
-use std::io::{Error, ErrorKind};
+use std::fs::File;
+use std::io::{BufReader, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
 use imagesize::blob_size;
 use md5::Digest;
-
-use crate::images::Extension::PNG;
 
 #[derive(Debug, PartialEq)]
 enum Extension {
@@ -124,22 +123,27 @@ pub fn shallow_pass_location(mut location: Location) -> Location {
 }
 
 pub fn deep_pass_location(mut location: Location) -> Location {
-    let mut deep_metadata = Vec::<Metadata>::new();
-
-    for mut metadata in location.metadata {
-        metadata = decode_file_parse(metadata);
-        deep_metadata.push(metadata);
+    for metadata in location.metadata.iter_mut() {
+        decode_file_parse(metadata);
     }
-
-    location.metadata = deep_metadata;
     location
 }
 
-fn decode_file_parse(mut metadata: Metadata) -> Metadata {
-    let raw_bytes = fs::read(&metadata.path).unwrap();
-    let ((width, height), error) = parse_dimensions(&raw_bytes);
+fn decode_file_parse(metadata: &mut Metadata) {
+    let file = File::open(&metadata.path).unwrap();
+    let mut buf_reader = BufReader::new(file);
+    //
+    let mut buffer = Vec::<u8>::new();
+    let mut buffer = [0; 15_000_0];
+    //
+    // buf_reader.read_to_end(&mut buffer);
+    buf_reader.read(&mut buffer);
+    // let raw_bytes = fs::read(&metadata.path).unwrap();
+    // let ((width, height), error) = parse_dimensions(&raw_bytes);
 
-    metadata.md5 = generate_md5(&raw_bytes);
+    // metadata.md5 = generate_md5(&raw_bytes);
+    metadata.md5 = generate_md5(&buffer);
+    let ((width, height), error) = parse_dimensions(&buffer);
 
     metadata.width = width;
     metadata.height = height;
@@ -150,7 +154,6 @@ fn decode_file_parse(mut metadata: Metadata) -> Metadata {
             format!("{}", e),
         ))
     }
-    metadata
 }
 
 fn parse_dimensions(bytes: &[u8]) -> ((u32, u32), Option<imagesize::ImageError>) {
