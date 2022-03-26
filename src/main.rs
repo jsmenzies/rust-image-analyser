@@ -11,29 +11,17 @@ fn main() {
 
     location = images::shallow_pass_location(location);
 
-    location.metadata
-        .iter()
-        .filter(|meta| !meta.errors.is_empty())
-        .for_each(|metadata| {
-            println!("{:?}", metadata.errors);
-        });
-
-    println!("{:?}", &location.metadata.len());
-
-    location = images::deep_pass_location(location);
-    println!("{:?}", &location.metadata.len());
+    let location = images::deep_pass_location(&mut location);
 
     let errs = location.metadata
         .iter()
-        .filter(|meta| !meta.errors.is_empty());
+        .filter(|meta| !meta.errors.is_empty())
+        .map(|meta| println!("{:?}", meta.errors.clone())).count();
 
-    for err in errs.clone() {
-        println!("{:?}", err.errors);
-    };
+    println!("total count/errors: {}/{}", location.metadata.len(), errs);
+    println!("hashmap key/value: {}/{}", &location.lookup.keys().len(),
+             &location.lookup.values().flatten().count());
 
-    println!();
-    print!("{:?}", errs.count());
-    print!("/");
-    print!("{:?}", location.metadata.len());
-    println!();
+
+
 }

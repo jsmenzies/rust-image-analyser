@@ -1,15 +1,15 @@
-use std::{fs, io};
+use std::{fs, fs::File, io};
+use std::collections::HashMap;
 use std::default::Default;
 use std::ffi::{OsStr, OsString};
-use std::fmt::Debug;
-use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Read};
+use std::fmt::{Debug};
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use imagesize::blob_size;
+use imagesize::{blob_size, ImageType};
 use md5::Digest;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Extension {
     JPG,
     MP4,
@@ -21,31 +21,39 @@ enum Extension {
     PSD,
     WEBP,
     MOV,
+    HEIF,
+    JXL,
     UNKNOWN,
 }
 
-#[derive(Debug)]
-enum FileParseError {
-    FileIsEmpty,
-    FileInaccessible,
-    NoMD5,
-}
-
 #[derive(Debug, Default)]
-pub struct Location {
+pub struct Location<> {
     root: PathBuf,
     paths: Vec<PathBuf>,
     pub metadata: Vec<Metadata>,
+    pub lookup: HashMap<String, Vec<Metadata>>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Debug)]
+pub enum FileParseError {
+    FileDoesNotExist(PathBuf, String),
+    ParseError(PathBuf, String),
+    IOParseError(PathBuf, String),
+    LibraryParseError { message: String },
+    NoFileName(PathBuf, String),
+    Unreadable(PathBuf, String),
+    IOError(PathBuf, String),
+}
+
+#[derive(Clone, Default, Debug)]
 pub struct Metadata {
     path: PathBuf,
     title: OsString,
-    extension: Extension,
+    advertised_extension: Extension,
     content_length: u64,
-    pub errors: Vec<Error>,
+    pub errors: Vec<FileParseError>,
     md5: String,
+    parsed_extension: Extension,
     width: u32,
     height: u32,
     // title_date_time: String,
@@ -60,7 +68,7 @@ pub struct Metadata {
     // png_create_date: String,
 }
 
-pub fn add_location(root_string: String) -> Result<Location, Error> {
+pub fn add_location(root_string: String) -> Result<Location, FileParseError> {
     let path = Path::new(&root_string);
     let root = PathBuf::from(path);
 
@@ -70,98 +78,135 @@ pub fn add_location(root_string: String) -> Result<Location, Error> {
                 root,
                 paths,
                 metadata: Vec::new(),
+                lookup: HashMap::new(),
             };
             Ok(location)
         }
-        Err(e) => Err(e),
+        Err(e) => Err(FileParseError::FileDoesNotExist(root, e.to_string())),
     }
 }
 
 pub fn shallow_pass_location(mut location: Location) -> Location {
     for path in location.paths.iter() {
-        let mut metadata = Metadata {
-            path: path.to_path_buf(),
-            ..Metadata::default()
-        };
-
-        match parse_fs_content_length(&metadata.path) {
-            Ok(content_length) => {
-                metadata.content_length = content_length;
-            }
-            Err(e) => {
-                metadata.errors.push(e);
-            }
-        }
-
-        match parse_title(&metadata.path) {
-            Ok(title) => {
-                metadata.title = title;
-            }
-            Err(e) => {
-                metadata.errors.push(e);
-            }
-        }
-
-        match parse_extension(&metadata.path) {
-            Ok(extension) => {
-                metadata.extension = extension;
-            }
-            Err(e) => {
-                metadata.errors.push(e);
-            }
-        }
-
-        if !metadata.errors.is_empty() {
-            println!("{:?}", metadata.errors);
-        }
-
+        let metadata = shallow_parse(path);
         location.metadata.push(metadata);
     }
-
-
     location
 }
 
-pub fn deep_pass_location(mut location: Location) -> Location {
+fn shallow_parse(path: &Path) -> Metadata {
+    let mut metadata = Metadata {
+        path: path.to_path_buf(),
+        ..Metadata::default()
+    };
+
+    match parse_fs_content_length(&metadata.path) {
+        Ok(content_length) => metadata.content_length = content_length,
+        Err(e) => {
+            println!("{:?}", e);
+            metadata.errors.push(e)
+        }
+    }
+
+    match parse_title(&metadata.path) {
+        Ok(title) => metadata.title = title,
+        Err(e) => {
+            println!("{:?}", e);
+            metadata.errors.push(e)
+        }
+    }
+
+    match parse_extension(&metadata.path) {
+        Ok(extension) => metadata.advertised_extension = extension,
+        Err(e) => {
+            println!("{:?}", e);
+            metadata.errors.push(e)
+        }
+    }
+    metadata
+}
+
+pub fn deep_pass_location(location: &mut Location) -> &mut Location {
+    let mut lookup = HashMap::<String, Vec<Metadata>>::new();
+
     for metadata in location.metadata.iter_mut() {
-        decode_file_parse(metadata);
+        let path = &metadata.path;
+        let bytes = parse_first_n_bytes(path);
+
+        match parse_dimension_from_bytes(&bytes) {
+            Ok((width, height)) => {
+                metadata.width = width;
+                metadata.height = height;
+            }
+            Err(e) => {
+                let error = convert_library_error_to_file_parse_error(e, path);
+                metadata.errors.push(error);
+            }
+        }
+
+        match parse_file_type_from_bytes(&bytes) {
+            Ok(file_type) => metadata.parsed_extension = file_type,
+            Err(e) => {
+                let error = convert_library_error_to_file_parse_error(e, path);
+                metadata.errors.push(error);
+            }
+        }
+
+        metadata.md5 = generate_md5(&bytes);
+        lookup.entry(metadata.md5.to_string())
+            .or_insert(Vec::new())
+            .push(metadata.clone());
     }
+    location.lookup = lookup;
+
     location
 }
 
-fn decode_file_parse(metadata: &mut Metadata) {
-    let file = File::open(&metadata.path).unwrap();
-    let mut buf_reader = BufReader::new(file);
-    //
-    let mut buffer = Vec::<u8>::new();
-    let mut buffer = [0; 15_000_0];
-    //
-    // buf_reader.read_to_end(&mut buffer);
-    buf_reader.read(&mut buffer);
-    // let raw_bytes = fs::read(&metadata.path).unwrap();
-    // let ((width, height), error) = parse_dimensions(&raw_bytes);
+// fn parse_first_n_bytes(path: &Path) -> Vec<u8> {
+fn parse_first_n_bytes(path: &Path) -> [u8; 20_000] {
+    let file = File::open(path).unwrap();
+    let mut reader = BufReader::new(file);
 
-    // metadata.md5 = generate_md5(&raw_bytes);
-    metadata.md5 = generate_md5(&buffer);
-    let ((width, height), error) = parse_dimensions(&buffer);
+    let mut header = [0; 20_000];
+    // let mut all_bytes = Vec::new();
 
-    metadata.width = width;
-    metadata.height = height;
+    reader.read_exact(&mut header);
+    // reader.read_to_end(&mut all_bytes);
+    header
+    // all_bytes
+}
 
-    if let Some(e) = error {
-        metadata.errors.push(Error::new(
-            ErrorKind::Other,
-            format!("{}", e),
-        ))
+fn parse_file_type_from_bytes(bytes: &[u8]) -> Result<Extension, FileParseError> {
+    match imagesize::image_type(bytes) {
+        Ok(format) => {
+            match format {
+                ImageType::Jpeg => Ok(Extension::JPG),
+                ImageType::Png => Ok(Extension::PNG),
+                ImageType::Gif => Ok(Extension::GIF),
+                ImageType::Bmp => Ok(Extension::BMP),
+                ImageType::Webp => Ok(Extension::WEBP),
+                ImageType::Tiff => Ok(Extension::TIFF),
+                ImageType::Heif => Ok(Extension::HEIF),
+                ImageType::Jxl => Ok(Extension::JXL),
+                ImageType::Psd => Ok(Extension::PSD),
+            }
+        }
+        Err(e) => {
+            Err(FileParseError::LibraryParseError {
+                message: e.to_string(),
+            })
+        }
     }
 }
 
-fn parse_dimensions(bytes: &[u8]) -> ((u32, u32), Option<imagesize::ImageError>) {
+fn parse_dimension_from_bytes(bytes: &[u8]) -> Result<(u32, u32), FileParseError> {
     let result = blob_size(bytes);
 
     match result {
-        Ok(size) => ((size.width as u32, size.height as u32), None),
-        Err(e) => ((0, 0), Some(e)),
+        Ok(size) => Ok((size.width as u32, size.height as u32)),
+        Err(e) => Err(FileParseError::LibraryParseError {
+            message: e.to_string(),
+        })
     }
 }
 
@@ -170,11 +215,17 @@ fn generate_md5(bytes: &[u8]) -> String {
     format!("{:x}", output)
 }
 
-fn parse_fs_content_length(path: &Path) -> Result<u64, Error> {
-    fs::metadata(path).map(|m| m.len())
+fn parse_fs_content_length(path: &Path) -> Result<u64, FileParseError> {
+    fs::metadata(path)
+        .map(|m| m.len())
+        .map_err(|e|
+            FileParseError::IOError(
+                path.to_path_buf(),
+                e.to_string(),
+            ))
 }
 
-fn parse_title(path: &Path) -> Result<OsString, Error> {
+fn parse_title(path: &Path) -> Result<OsString, FileParseError> {
     let name = path.file_name();
     match name {
         Some(value) => {
@@ -182,24 +233,22 @@ fn parse_title(path: &Path) -> Result<OsString, Error> {
         }
         None => {
             // Unsure if the name can actually not be present?
-            Err(Error::new(ErrorKind::Other, "No file name"))
+            Err(FileParseError::NoFileName(PathBuf::from(path), "No file name".to_string()))
         }
     }
 }
 
-fn parse_extension(path: &Path) -> Result<Extension, Error> {
+fn parse_extension(path: &Path) -> Result<Extension, FileParseError> {
     match path.extension() {
         Some(str) => {
             let extension = match_extension(str);
             if extension != Extension::UNKNOWN {
                 Ok(extension)
             } else {
-                Err(Error::new(ErrorKind::Other, "Unknown file extension"))
+                Err(FileParseError::ParseError(PathBuf::from(path), "Unknown file extension".to_string()))
             }
         }
-        None => {
-            Err(Error::new(ErrorKind::Other, "No file extension"))
-        }
+        None => Err(FileParseError::ParseError(PathBuf::from(path), "No file extension".to_string()))
     }
 }
 
@@ -223,6 +272,9 @@ pub fn verify_dir(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
     println!("Parsing directory: {}", dir.display());
 
     Ok(fs::read_dir(dir)?
+        // .filter(|entry| entry.as_ref().unwrap().file_name() == OsString::from("2e0da20211010_173216.jpg"))
+        // .filter(|entry| entry.as_ref().unwrap().file_name() == OsString::from("34e97IMG_8492.MOV"))
+        // .take(100)
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_file())
         .collect::<Vec<PathBuf>>())
@@ -230,4 +282,12 @@ pub fn verify_dir(dir: &Path) -> Result<Vec<PathBuf>, io::Error> {
 
 impl Default for Extension {
     fn default() -> Self { Extension::UNKNOWN }
+}
+
+fn convert_library_error_to_file_parse_error(err: FileParseError, path: &Path) -> FileParseError {
+    if let FileParseError::LibraryParseError { message } = err {
+        FileParseError::ParseError(path.to_path_buf(), message)
+    } else {
+        err
+    }
 }
