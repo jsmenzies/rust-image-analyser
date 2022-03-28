@@ -1,5 +1,7 @@
 ### Exifer future ideas/features list
 
+Just me playing with rust for the first time.
+
 - [x] MD5
 - [ ] Regex name for datetime
 - [ ] Phash
@@ -7,28 +9,16 @@
 - [ ] Local Storage?
 - [ ]
 
-Reading all files:
-time: 1:23
-count: 8327
-map count: 6913
-error count: 806
+header.len() >= 3 && &header[0..3] == \xFF\xD8\xFF
 
-100_000
-time: 3s
-count: 8327
-map count: 6849
-error count: 813
+0xff   0xd8
 
-250_000
-time: 7s
-count: 8327
-map count: 6861
-error count: 806
+Full read
+total count/errors: 9711/933
+hashmap key/value: 7784/9711
 
-1_000_000
-20s
-8327
-6880
-
-806/8327
+150k - 940
+165k - 939
+170k - 934
+175k - 933
 
