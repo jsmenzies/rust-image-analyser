@@ -44,13 +44,9 @@ fn parse_file_type_from_bytes(path: &Path) -> Result<Extension, ApplicationError
             match format {
                 ImageType::Jpeg => Ok(Extension::JPG),
                 ImageType::Png => Ok(Extension::PNG),
-                ImageType::Gif => Ok(Extension::GIF),
-                ImageType::Bmp => Ok(Extension::BMP),
-                ImageType::Webp => Ok(Extension::WEBP),
-                ImageType::Tiff => Ok(Extension::TIFF),
                 ImageType::Heif => Ok(Extension::HEIF),
-                ImageType::Jxl => Ok(Extension::JXL),
-                ImageType::Psd => Ok(Extension::PSD),
+                _ => Err(ApplicationError::UnsupportedFileType(path.to_path_buf(),
+                                                               "Unsupported file type".to_string()))
             }
         }
         Err(e) => {

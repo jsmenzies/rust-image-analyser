@@ -1,6 +1,8 @@
 #![feature(drain_filter)]
 extern crate core;
 
+use std::collections::HashMap;
+
 use crate::extension::Extension;
 use crate::metadata::Metadata;
 
@@ -26,12 +28,13 @@ fn main() {
         }
     }
 
+    // Remove mp4/mov for now
     location.metadata
         .drain_filter(|metadata| {
             match &metadata.file_details {
                 Some(details) => {
                     if details.extension != Extension::MP4 && details.extension != Extension::MOV {
-                        return false
+                        return false;
                     }
                 }
                 None => return true
@@ -39,7 +42,20 @@ fn main() {
             true
         });
 
-    println!("{:?}", location.metadata.len());
+    let x: HashMap<Extension, Vec<Metadata>> = location.metadata
+        .iter()
+        .fold(HashMap::new(),
+              |mut acc, metadata| {
+                  let key = metadata.clone().file_details.unwrap().extension;
+                  acc.entry(key).or_insert(vec![]).push(metadata.clone());
+                  acc
+              });
+
+    println!("{:?}", x);
+
+// let new: HashMap<String, String> = old.into_iter().map(|(key, value)| {
+//     return (key, some_conversion(value));
+// }).collect();
 
     for metadata in location.metadata.iter_mut() {
         match imagesize::parse_using_imagesize(&metadata.path) {
@@ -50,14 +66,14 @@ fn main() {
         }
     }
 
-    for metadata in location.metadata.iter_mut() {
-        match exif::parse_exif_details(&metadata.path) {
-            Ok(details) => metadata.update_exif_details(Some(details)),
-            Err(error) => {
-                println!("{:?}", error);
-            }
-        }
-    }
+    // for metadata in location.metadata.iter_mut() {
+    //     match exif::parse_exif_details(&metadata.path) {
+    //         Ok(details) => metadata.update_exif_details(Some(details)),
+    //         Err(error) => {
+    //             println!("{:?}", error);
+    //         }
+    //     }
+    // }
 
     print_file_detail_results(&location.metadata);
     print_file_image_results(&location.metadata);
